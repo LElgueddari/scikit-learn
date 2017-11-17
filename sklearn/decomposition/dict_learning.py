@@ -510,9 +510,9 @@ def _update_dict(dictionary, Y, code, verbose=False, return_r2=False,
     for k in range(n_components):
         # R <- 1.0 * U_k * V_k^T + R
         R = ger(1.0, dictionary[:, k], code[k, :], a=R, overwrite_a=True)
-        dictionary[:, k] = np.dot(R, code[k, :].T)
+        dictionary[:, k] = np.dot(np.conj(R), code[k, :])
         # Scale k'th atom
-        atom_norm_square = np.dot(dictionary[:, k], dictionary[:, k])
+        atom_norm_square = np.real(np.dot(np.conj(dictionary[:, k]), dictionary[:, k]))
         if atom_norm_square < 1e-20:
             if verbose == 1:
                 sys.stdout.write("+")
@@ -522,8 +522,8 @@ def _update_dict(dictionary, Y, code, verbose=False, return_r2=False,
             dictionary[:, k] = random_state.randn(n_samples)
             # Setting corresponding coefs to 0
             code[k, :] = 0.0
-            dictionary[:, k] /= sqrt(np.dot(dictionary[:, k],
-                                            dictionary[:, k]))
+            dictionary[:, k] /= sqrt(np.real(np.dot(dictionary[:, k],
+                                            dictionary[:, k])))
         else:
             dictionary[:, k] /= sqrt(atom_norm_square)
             # R <- -1.0 * U_k * V_k^T + R
