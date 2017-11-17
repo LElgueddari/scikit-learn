@@ -22,6 +22,9 @@ from ..utils import (check_array, check_random_state, gen_even_slices,
 from ..utils.extmath import randomized_svd, row_norms
 from ..utils.validation import check_is_fitted, _ensure_no_complex_data
 from ..linear_model import Lasso, orthogonal_mp_gram, LassoLars, Lars
+from pisap.numerics.optimization import ForwardBackward
+from pisap.numerics.gradient import Grad2D
+from pisap.numerics.proximity import  SoftThreshold_DL
 
 
 def _sparse_encode(X, dictionary, gram, cov=None, algorithm='lasso_lars',
@@ -103,65 +106,84 @@ def _sparse_encode(X, dictionary, gram, cov=None, algorithm='lasso_lars',
         # overwriting cov is safe
         copy_cov = False
         cov = np.dot(dictionary, X.T)
+    try:
+        _ensure_no_complex_data(X)
+        if algorithm == 'lasso_lars':
+            alpha = float(regularization) / n_features  # account for scaling
+            try:
+                err_mgt = np.seterr(all='ignore')
 
-    if algorithm == 'lasso_lars':
-        alpha = float(regularization) / n_features  # account for scaling
-        try:
-            err_mgt = np.seterr(all='ignore')
+                # Not passing in verbose=max(0, verbose-1) because Lars.fit already
+                # corrects the verbosity level.
+                lasso_lars = LassoLars(alpha=alpha, fit_intercept=False,
+                                       verbose=verbose, normalize=False,
+                                       precompute=gram, fit_path=False)
+                lasso_lars.fit(dictionary.T, X.T, Xy=cov)
+                new_code = lasso_lars.coef_
 
-            # Not passing in verbose=max(0, verbose-1) because Lars.fit already
-            # corrects the verbosity level.
-            lasso_lars = LassoLars(alpha=alpha, fit_intercept=False,
-                                   verbose=verbose, normalize=False,
-                                   precompute=gram, fit_path=False)
-            lasso_lars.fit(dictionary.T, X.T, Xy=cov)
-            new_code = lasso_lars.coef_
-        finally:
-            np.seterr(**err_mgt)
+                print('new_code.shape', new_code.shape)
+            finally:
+                np.seterr(**err_mgt)
 
-    elif algorithm == 'lasso_cd':
-        alpha = float(regularization) / n_features  # account for scaling
+        elif algorithm == 'lasso_cd':
+            alpha = float(regularization) / n_features  # account for scaling
 
-        # TODO: Make verbosity argument for Lasso?
-        # sklearn.linear_model.coordinate_descent.enet_path has a verbosity
-        # argument that we could pass in from Lasso.
-        clf = Lasso(alpha=alpha, fit_intercept=False, normalize=False,
-                    precompute=gram, max_iter=max_iter, warm_start=True)
+            # TODO: Make verbosity argument for Lasso?
+            # sklearn.linear_model.coordinate_descent.enet_path has a verbosity
+            # argument that we could pass in from Lasso.
+            clf = Lasso(alpha=alpha, fit_intercept=False, normalize=False,
+                        precompute=gram, max_iter=max_iter, warm_start=True)
 
-        if init is not None:
-            clf.coef_ = init
+            if init is not None:
+                clf.coef_ = init
 
-        clf.fit(dictionary.T, X.T, check_input=check_input)
-        new_code = clf.coef_
+            clf.fit(dictionary.T, X.T, check_input=check_input)
+            new_code = clf.coef_
 
-    elif algorithm == 'lars':
-        try:
-            err_mgt = np.seterr(all='ignore')
+        elif algorithm == 'lars':
+            try:
+                err_mgt = np.seterr(all='ignore')
 
-            # Not passing in verbose=max(0, verbose-1) because Lars.fit already
-            # corrects the verbosity level.
-            lars = Lars(fit_intercept=False, verbose=verbose, normalize=False,
-                        precompute=gram, n_nonzero_coefs=int(regularization),
-                        fit_path=False)
-            lars.fit(dictionary.T, X.T, Xy=cov)
-            new_code = lars.coef_
-        finally:
-            np.seterr(**err_mgt)
+                # Not passing in verbose=max(0, verbose-1) because Lars.fit already
+                # corrects the verbosity level.
+                lars = Lars(fit_intercept=False, verbose=verbose, normalize=False,
+                            precompute=gram, n_nonzero_coefs=int(regularization),
+                            fit_path=False)
+                lars.fit(dictionary.T, X.T, Xy=cov)
+                new_code = lars.coef_
+            finally:
+                np.seterr(**err_mgt)
 
-    elif algorithm == 'threshold':
-        new_code = ((np.sign(cov) *
-                    np.maximum(np.abs(cov) - regularization, 0)).T)
+        elif algorithm == 'threshold':
+            new_code = ((np.sign(cov) *
+                        np.maximum(np.abs(cov) - regularization, 0)).T)
 
-    elif algorithm == 'omp':
-        # TODO: Should verbose argument be passed to this?
-        new_code = orthogonal_mp_gram(
-            Gram=gram, Xy=cov, n_nonzero_coefs=int(regularization),
-            tol=None, norms_squared=row_norms(X, squared=True),
-            copy_Xy=copy_cov).T
-    else:
-        raise ValueError('Sparse coding method must be "lasso_lars" '
-                         '"lasso_cd",  "lasso", "threshold" or "omp", got %s.'
-                         % algorithm)
+        elif algorithm == 'omp':
+            # TODO: Should verbose argument be passed to this?
+            new_code = orthogonal_mp_gram(
+                Gram=gram, Xy=cov, n_nonzero_coefs=int(regularization),
+                tol=None, norms_squared=row_norms(X, squared=True),
+                copy_Xy=copy_cov).T
+        else:
+            raise ValueError('Sparse coding method must be "lasso_lars" '
+                             '"lasso_cd",  "lasso", "threshold" or "omp", got %s.'
+                             % algorithm)
+    except:
+        alpha = float(regularization)
+        grad_op = Grad2D(data = X.T, X = dictionary.T)
+        initial_guess = np.zeros((dictionary.T.shape[1],
+                                X.shape[0])).astype('complex128')
+        print('initial_guess', initial_guess.shape)
+        prox_op = SoftThreshold_DL(weights = alpha)
+        opt = ForwardBackward(
+            x = initial_guess,
+            grad=grad_op,
+            prox=prox_op,
+            )
+        opt.iterate(max_iter=max_iter)
+        new_code = opt.z_new.T
+        print('new_code.shape', new_code.shape)
+
     if new_code.ndim != 2:
         return new_code.reshape(n_samples, n_components)
     return new_code
