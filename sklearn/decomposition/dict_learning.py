@@ -20,7 +20,7 @@ from ..externals.six.moves import zip
 from ..utils import (check_array, check_random_state, gen_even_slices,
                      gen_batches, _get_n_jobs)
 from ..utils.extmath import randomized_svd, row_norms
-from ..utils.validation import check_is_fitted
+from ..utils.validation import check_is_fitted, _ensure_no_complex_data
 from ..linear_model import Lasso, orthogonal_mp_gram, LassoLars, Lars
 
 
@@ -1260,17 +1260,29 @@ class MiniBatchDictionaryLearning(BaseEstimator, SparseCodingMixin):
             Returns the instance itself.
         """
         random_state = check_random_state(self.random_state)
-        X = check_array(X)
+        try:
+            _ensure_no_complex_data(X)
+            X = check_array(X)
+            U, (A, B), self.n_iter_ = dict_learning_online(
+                X, self.n_components, self.alpha,
+                n_iter=self.n_iter, return_code=False,
+                method=self.fit_algorithm,
+                n_jobs=self.n_jobs, dict_init=self.dict_init,
+                batch_size=self.batch_size, shuffle=self.shuffle,
+                verbose=self.verbose, random_state=random_state,
+                return_inner_stats=True,
+                return_n_iter=True)
+        except:
+            U, (A, B), self.n_iter_ = dict_learning_online_c(
+                X, self.n_components, self.alpha,
+                n_iter=self.n_iter, return_code=False,
+                method=self.fit_algorithm,
+                n_jobs=self.n_jobs, dict_init=self.dict_init,
+                batch_size=self.batch_size, shuffle=self.shuffle,
+                verbose=self.verbose, random_state=random_state,
+                return_inner_stats=True,
+                return_n_iter=True)
 
-        U, (A, B), self.n_iter_ = dict_learning_online(
-            X, self.n_components, self.alpha,
-            n_iter=self.n_iter, return_code=False,
-            method=self.fit_algorithm,
-            n_jobs=self.n_jobs, dict_init=self.dict_init,
-            batch_size=self.batch_size, shuffle=self.shuffle,
-            verbose=self.verbose, random_state=random_state,
-            return_inner_stats=True,
-            return_n_iter=True)
         self.components_ = U
         # Keep track of the state of the algorithm to be able to do
         # some online fitting (partial_fit)
