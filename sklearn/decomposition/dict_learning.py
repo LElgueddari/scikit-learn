@@ -121,7 +121,6 @@ def _sparse_encode(X, dictionary, gram, cov=None, algorithm='lasso_lars',
                 lasso_lars.fit(dictionary.T, X.T, Xy=cov)
                 new_code = lasso_lars.coef_
 
-                print('new_code.shape', new_code.shape)
             finally:
                 np.seterr(**err_mgt)
 
@@ -173,7 +172,6 @@ def _sparse_encode(X, dictionary, gram, cov=None, algorithm='lasso_lars',
         grad_op = Grad2D(data = X.T, X = dictionary.T)
         initial_guess = np.zeros((dictionary.T.shape[1],
                                 X.shape[0])).astype('complex128')
-        print('initial_guess', initial_guess.shape)
         prox_op = SoftThreshold_DL(weights = alpha)
         opt = ForwardBackward(
             x = initial_guess,
@@ -182,7 +180,6 @@ def _sparse_encode(X, dictionary, gram, cov=None, algorithm='lasso_lars',
             )
         opt.iterate(max_iter=max_iter)
         new_code = opt.z_new.T
-        print('new_code.shape', new_code.shape)
 
     if new_code.ndim != 2:
         return new_code.reshape(n_samples, n_components)
@@ -419,12 +416,6 @@ def sparse_encode_c(X, dictionary, gram=None, cov=None, algorithm='lasso_lars',
             if algorithm == 'lasso_cd':
                 dictionary = dictionary.T
                 X = X.T
-        #         dictionary = check_array(dictionary, order='C', dtype='float64')
-        #         X = check_array(X, order='C', dtype='float64')
-        #     # else:
-                # dictionary = check_array(dictionary)
-                # X = check_array(X)
-        print('dictionary.shape, X.T.shape', dictionary.shape, X.T.shape)
         n_samples, n_features = X.shape
         n_components = dictionary.shape[0]
 
@@ -1122,9 +1113,7 @@ def dict_learning_online_c(X, n_components=2, alpha=1, n_iter=100,
     ii = iter_offset - 1
 
     for ii, batch in zip(range(iter_offset, iter_offset + n_iter), batches):
-        print('Xtrain.shape', X_train.shape)
         this_X = X_train[batch]
-        print('this_X.dtype', this_X.dtype, 'batch', batch, 'this_X.shape', this_X.shape)
         dt = (time.time() - t0)
         if verbose == 1:
             sys.stdout.write(".")
@@ -1133,7 +1122,6 @@ def dict_learning_online_c(X, n_components=2, alpha=1, n_iter=100,
             if verbose > 10 or ii % ceil(100. / verbose) == 0:
                 print("Iteration % 3i (elapsed time: % 3is, % 4.1fmn)"
                       % (ii, dt, dt / 60))
-        print('this_X.shape, dictionary.T.shape', this_X.shape, dictionary.T.shape)
         this_code = sparse_encode_c(this_X, dictionary.T, algorithm=method,
                                   alpha=alpha, n_jobs=n_jobs).T
 
